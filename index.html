@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stream Deck Icon Creator</title>
+    <!-- Tailwind CSS for layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Phosphor Icons for UI icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <style>
+        /* Custom UI Styling to match the 'Dark/Pro' aesthetic */
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: 'Inter', sans-serif;
+            user-select: none; /* Prevent selection while dragging */
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+        /* Input Styling */
+        input[type="color"] {
+            -webkit-appearance: none; border: none; width: 32px; height: 32px;
+            border-radius: 50%; overflow: hidden; cursor: pointer; padding: 0; background: none;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: 2px solid #444; border-radius: 50%; }
+
+        input[type="range"] {
+            -webkit-appearance: none; background: #333; height: 6px; border-radius: 3px; outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 16px; height: 16px; background: #3b82f6; border-radius: 50%; cursor: pointer;
+        }
+
+        /* Accordion transitions */
+        .accordion-content {
+            transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+            max-height: 0; opacity: 0; overflow: hidden;
+        }
+        .accordion-content.open { max-height: 600px; opacity: 1; }
+
+        /* Canvas Checkerboard Background */
+        .checkerboard {
+            background-color: #1a1a1a;
+            background-image: 
+                linear-gradient(45deg, #222 25%, transparent 25%), 
+                linear-gradient(-45deg, #222 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #222 75%), 
+                linear-gradient(-45deg, transparent 75%, #222 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        /* Keyframes for the RGB Animation */
+        @keyframes rotateHue {
+            0% { filter: hue-rotate(0deg); }
+            100% { filter: hue-rotate(360deg); }
+        }
+        .animate-rgb { animation: rotateHue 6s linear infinite; }
+        .drop-zone { border: 2px dashed #444; transition: all 0.2s; }
+        .drop-zone.dragover { border-color: #3b82f6; background-color: rgba(59, 130, 246, 0.1); }
+
+        /* Gizmo Cursors */
+        .cursor-move { cursor: move; }
+        .cursor-nwse { cursor: nwse-resize; }
+        .cursor-nesw { cursor: nesw-resize; }
+        .cursor-rotate { cursor: alias; } /* Closest valid generic cursor for rotation */
+    </style>
+</head>
+<body class="h-screen flex flex-col md:flex-row overflow-hidden">
+
+    <!-- LEFT SIDE: Controls -->
+    <div class="w-full md:w-96 bg-[#1a1a1a] border-r border-[#333] flex flex-col h-full z-10 shadow-xl">
+        <div class="p-4 border-b border-[#333] flex items-center justify-between">
+            <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                Icon Forge
+            </h1>
+            <span class="text-xs text-gray-500">v1.1 Gizmos</span>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+
+            <!-- BORDER SECTION -->
+            <div class="bg-[#222] rounded-lg p-1 border border-[#333]">
+                <button onclick="toggleAccordion('border-controls')" class="w-full p-3 flex items-center justify-between hover:bg-[#2a2a2a] rounded transition">
+                    <span class="font-medium flex items-center gap-2"><i class="ph ph-corners-out"></i> Border</span>
+                    <i class="ph ph-caret-down text-gray-500"></i>
+                </button>
+                <div id="border-controls" class="accordion-content open px-3 pb-3">
+                    <div class="space-y-4 mt-2">
+                        <div class="flex items-center justify-between">
+                            <label class="text-sm text-gray-400">Width</label>
+                            <input type="range" id="borderWidth" min="0" max="20" value="8" class="w-32">
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <label class="text-sm text-gray-400">Radius</label>
+                            <input type="range" id="borderRadius" min="0" max="72" value="24" class="w-32">
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <label class="text-sm text-gray-400">Style</label>
+                            <select id="borderStyle" class="bg-[#333] text-sm rounded px-2 py-1 border border-[#444] focus:border-blue-500 outline-none">
+                                <option value="solid">Solid</option>
+                                <option value="gradient">Gradient</option>
+                                <option value="rgb" selected>Slow RGB (Anim)</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="flex flex-col items-center">
+                                <input type="color" id="borderColor1" value="#ff4d4d">
+                                <span class="text-[10px] text-gray-500 mt-1">Col 1</span>
+                            </div>
+                            <div class="flex flex-col items-center">
+                                <input type="color" id="borderColor2" value="#4d4dff">
+                                <span class="text-[10px] text-gray-500 mt-1">Col 2</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ICON SECTION -->
+            <div class="bg-[#222] rounded-lg p-1 border border-[#333]">
+                <button onclick="toggleAccordion('icon-controls')" class="w-full p-3 flex items-center justify-between hover:bg-[#2a2a2a] rounded transition">
+                    <span class="font-medium flex items-center gap-2"><i class="ph ph-image"></i> Icon</span>
+                    <i class="ph ph-caret-down text-gray-500"></i>
+                </button>
+                <div id="icon-controls" class="accordion-content open px-3 pb-3">
+                    <div class="space-y-4 mt-2">
+                        
+                        <!-- Upload Area -->
+                        <div id="dropZone" class="drop-zone rounded-lg p-4 text-center cursor-pointer hover:bg-[#2a2a2a]">
+                            <input type="file" id="iconUpload" class="hidden" accept="image/svg+xml,image/png,image/jpeg,image/webp">
+                            <i class="ph ph-upload-simple text-2xl text-gray-400 mb-1"></i>
+                            <p class="text-xs text-gray-400">Click or Drag SVG/PNG</p>
+                        </div>
+
+                         <div class="flex items-center justify-between">
+                            <label class="text-sm text-gray-400">Manual Scale</label>
+                            <input type="range" id="iconScale" min="0.1" max="2" step="0.1" value="0.6" class="w-32">
+                        </div>
+
+                        <!-- Override Color Toggle -->
+                        <div class="flex items-center justify-between pt-2 border-t border-[#333]">
+                            <label class="text-sm text-gray-400">Override Color</label>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="overrideColorToggle" class="sr-only peer">
+                                <div class="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+
+                        <div id="iconColorControl" class="flex items-center gap-4 transition-opacity opacity-50 pointer-events-none">
+                            <div class="flex flex-col items-center">
+                                <input type="color" id="iconColor" value="#ffffff">
+                                <span class="text-[10px] text-gray-500 mt-1">Tint</span>
+                            </div>
+                            <p class="text-[10px] text-gray-500 w-32 leading-tight">Enable "Override Color" to tint PNGs or SVG paths.</p>
+                        </div>
+
+                        <div class="pt-2">
+                             <button id="resetTransformBtn" class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                                <i class="ph ph-arrow-counter-clockwise"></i> Reset Position
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- BACKGROUND SECTION -->
+            <div class="bg-[#222] rounded-lg p-1 border border-[#333]">
+                <button onclick="toggleAccordion('bg-controls')" class="w-full p-3 flex items-center justify-between hover:bg-[#2a2a2a] rounded transition">
+                    <span class="font-medium flex items-center gap-2"><i class="ph ph-paint-bucket"></i> Background</span>
+                    <i class="ph ph-caret-down text-gray-500"></i>
+                </button>
+                <div id="bg-controls" class="accordion-content open px-3 pb-3">
+                    <div class="space-y-4 mt-2">
+                        <div class="flex items-center justify-between">
+                            <label class="text-sm text-gray-400">Color</label>
+                            <input type="color" id="bgColor" value="#000000">
+                        </div>
+
+                         <div class="flex items-center justify-between">
+                            <label class="text-sm text-gray-400">Corner Fill</label>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="cornerFillToggle" class="sr-only peer" checked>
+                                <div class="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+                        
+                         <div class="flex items-center justify-between">
+                            <label class="text-sm text-gray-400">Corner Color</label>
+                            <input type="color" id="cornerColor" value="#ffffff">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="p-4 border-t border-[#333] bg-[#1a1a1a]">
+            <button id="downloadBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20">
+                <i class="ph ph-download-simple text-lg"></i>
+                Download PNG
+            </button>
+        </div>
+    </div>
+
+    <!-- RIGHT SIDE: Preview -->
+    <div class="flex-1 bg-[#0a0a0a] flex flex-col items-center justify-center relative p-8 checkerboard">
+        
+        <div class="absolute top-4 right-4 text-gray-500 text-sm flex gap-2 items-center">
+             <span class="flex items-center gap-1 text-xs bg-black/50 px-2 py-1 rounded border border-white/10"><i class="ph ph-hand-pointing"></i> Drag to Move</span>
+             <span class="flex items-center gap-1 text-xs bg-black/50 px-2 py-1 rounded border border-white/10"><i class="ph ph-arrows-out"></i> Gizmos Active</span>
+        </div>
+
+        <!-- THE MAIN SVG CANVAS -->
+        <div id="canvasContainer" class="relative shadow-2xl shadow-black">
+            <!-- Render at Retina 2x for display, download handles native res -->
+            <svg id="mainSvg" width="288" height="288" viewBox="0 0 144 144" xmlns="http://www.w3.org/2000/svg" class="w-[288px] h-[288px] md:w-[400px] md:h-[400px]">
+                <defs>
+                    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop id="stop1" offset="0%" stop-color="#ff4d4d" />
+                        <stop id="stop2" offset="100%" stop-color="#4d4dff" />
+                    </linearGradient>
+
+                    <!-- Filter to recolor Raster Images (PNGs) to a single color -->
+                    <!-- Updated matrix to properly flatten alpha to the flood color -->
+                    <filter id="colorizeFilter">
+                         <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0" result="whiteMask"/>
+                         <feFlood id="floodColor" flood-color="#ffffff" result="flood"/>
+                         <feComposite in="flood" in2="whiteMask" operator="in"/>
+                    </filter>
+                    
+                    <clipPath id="cornerRadiusClip">
+                        <rect x="0" y="0" width="144" height="144" rx="24" />
+                    </clipPath>
+                </defs>
+
+                <!-- 1. Background -->
+                <rect id="bgRect" x="0" y="0" width="144" height="144" fill="#000000" rx="24" />
+
+                <!-- 2. Border -->
+                <rect id="borderRect" x="4" y="4" width="136" height="136" fill="none" stroke="url(#mainGradient)" stroke-width="8" rx="20" />
+
+                <!-- 3. Icon Container (Group) -->
+                <!-- We wrap it in a 'transformGroup' to handle x,y,rotate easily -->
+                <g id="transformGroup" transform="translate(72, 72) rotate(0) scale(0.6)">
+                    <g id="iconGroup">
+                        <!-- Default Icon -->
+                        <g id="defaultIcon" fill="#ffffff">
+                            <path d="M0 -30 L30 0 L0 30 L-30 0 Z" opacity="0.8"/>
+                            <circle cx="0" cy="0" r="15" fill="none" stroke="currentColor" stroke-width="5"/>
+                        </g>
+                    </g>
+                </g>
+
+                <!-- 4. Corner Fill (Triangle) -->
+                <path id="cornerPath" d="M100 144 L144 144 L144 100 Z" fill="#ffffff" clip-path="url(#cornerRadiusClip)" />
+                
+                <!-- 5. Gizmo Layer (Visual Only, removed on export) -->
+                <!-- Draws ON TOP of everything -->
+                <g id="gizmoLayer" display="none">
+                    <!-- Snap Guides -->
+                    <line id="snapX" x1="72" y1="0" x2="72" y2="144" stroke="cyan" stroke-width="1" stroke-dasharray="2,2" opacity="0" />
+                    <line id="snapY" x1="0" y1="72" x2="144" y2="72" stroke="cyan" stroke-width="1" stroke-dasharray="2,2" opacity="0" />
+
+                    <!-- Bounding Box -->
+                    <rect id="gizmoBox" x="-50" y="-50" width="100" height="100" fill="none" stroke="#3b82f6" stroke-width="1" stroke-dasharray="4,2" />
+                    
+                    <!-- Resize Handles -->
+                    <circle class="cursor-nwse gizmo-handle" data-type="scale" cx="-50" cy="-50" r="4" fill="white" stroke="#3b82f6" stroke-width="2"/>
+                    <circle class="cursor-nesw gizmo-handle" data-type="scale" cx="50" cy="-50" r="4" fill="white" stroke="#3b82f6" stroke-width="2"/>
+                    <circle class="cursor-nwse gizmo-handle" data-type="scale" cx="50" cy="50" r="4" fill="white" stroke="#3b82f6" stroke-width="2"/>
+                    <circle class="cursor-nesw gizmo-handle" data-type="scale" cx="-50" cy="50" r="4" fill="white" stroke="#3b82f6" stroke-width="2"/>
+                    
+                    <!-- Rotate Handle -->
+                    <line id="gizmoRotateLine" x1="0" y1="-50" x2="0" y2="-70" stroke="#3b82f6" stroke-width="1" />
+                    <circle class="cursor-rotate gizmo-handle" data-type="rotate" cx="0" cy="-70" r="4" fill="#3b82f6" stroke="white" stroke-width="2"/>
+                </g>
+
+            </svg>
+        </div>
+
+        <p class="mt-8 text-gray-500 text-sm max-w-md text-center">
+            Click element to activate gizmos. Drag to move. Use corners to scale.
+        </p>
+
+    </div>
+
+    <!-- Hidden Canvas for Export -->
+    <canvas id="exportCanvas" width="144" height="144" style="display:none;"></canvas>
+
+    <script>
+        // --- State Management ---
+        const state = {
+            border: {
+                width: 8,
+                radius: 24,
+                style: 'rgb', 
+                color1: '#ff4d4d',
+                color2: '#4d4dff'
+            },
+            icon: {
+                x: 72,
+                y: 72,
+                scale: 0.6,
+                rotation: 0,
+                overrideColor: false, // Default false now so PNGs look good out of box
+                color: '#ffffff',
+                type: 'default',
+                content: null
+            },
+            background: {
+                color: '#000000',
+                cornerFill: true,
+                cornerColor: '#ffffff'
+            },
+            interaction: {
+                isDragging: false,
+                dragType: null, // 'move', 'scale', 'rotate'
+                startX: 0,
+                startY: 0,
+                initialState: {}
+            }
+        };
+
+        // --- DOM Elements ---
+        const ui = {
+            // ... (previous bindings)
+            borderWidth: document.getElementById('borderWidth'),
+            borderRadius: document.getElementById('borderRadius'),
+            borderStyle: document.getElementById('borderStyle'),
+            borderColor1: document.getElementById('borderColor1'),
+            borderColor2: document.getElementById('borderColor2'),
+            
+            iconUpload: document.getElementById('iconUpload'),
+            dropZone: document.getElementById('dropZone'),
+            iconScale: document.getElementById('iconScale'),
+            overrideColorToggle: document.getElementById('overrideColorToggle'),
+            iconColor: document.getElementById('iconColor'),
+            iconColorControl: document.getElementById('iconColorControl'),
+            resetTransformBtn: document.getElementById('resetTransformBtn'),
+            
+            bgColor: document.getElementById('bgColor'),
+            cornerFillToggle: document.getElementById('cornerFillToggle'),
+            cornerColor: document.getElementById('cornerColor'),
+            
+            downloadBtn: document.getElementById('downloadBtn'),
+            
+            // SVG Elements
+            svg: document.getElementById('mainSvg'),
+            bgRect: document.getElementById('bgRect'),
+            borderRect: document.getElementById('borderRect'),
+            gradient: document.getElementById('mainGradient'),
+            stop1: document.getElementById('stop1'),
+            stop2: document.getElementById('stop2'),
+            
+            transformGroup: document.getElementById('transformGroup'),
+            iconGroup: document.getElementById('iconGroup'),
+            
+            gizmoLayer: document.getElementById('gizmoLayer'),
+            gizmoBox: document.getElementById('gizmoBox'),
+            gizmoRotateLine: document.getElementById('gizmoRotateLine'),
+            snapX: document.getElementById('snapX'),
+            snapY: document.getElementById('snapY'),
+            
+            cornerPath: document.getElementById('cornerPath'),
+            clipRect: document.querySelector('#cornerRadiusClip rect'),
+            floodColor: document.getElementById('floodColor')
+        };
+
+        // --- Core Render Logic ---
+        function render() {
+            // Background
+            ui.bgRect.setAttribute('fill', state.background.color);
+            ui.bgRect.setAttribute('rx', state.border.radius);
+            ui.clipRect.setAttribute('rx', state.border.radius);
+
+            // Border
+            ui.borderRect.setAttribute('stroke-width', state.border.width);
+            const innerRadius = Math.max(0, state.border.radius - (state.border.width/2));
+            ui.borderRect.setAttribute('rx', innerRadius);
+            
+            ui.borderRect.classList.remove('animate-rgb');
+            if (state.border.style === 'solid') {
+                ui.borderRect.setAttribute('stroke', state.border.color1);
+            } else if (state.border.style === 'gradient') {
+                ui.stop1.setAttribute('stop-color', state.border.color1);
+                ui.stop2.setAttribute('stop-color', state.border.color2);
+                ui.borderRect.setAttribute('stroke', 'url(#mainGradient)');
+            } else if (state.border.style === 'rgb') {
+                ui.stop1.setAttribute('stop-color', state.border.color1);
+                ui.stop2.setAttribute('stop-color', state.border.color2);
+                ui.borderRect.setAttribute('stroke', 'url(#mainGradient)');
+                ui.borderRect.classList.add('animate-rgb');
+            }
+
+            // Icon Transform
+            ui.transformGroup.setAttribute('transform', 
+                `translate(${state.icon.x}, ${state.icon.y}) rotate(${state.icon.rotation}) scale(${state.icon.scale})`);
+
+            // Icon Color & Filter Logic
+            // Update UI State
+            if(state.icon.overrideColor) {
+                ui.iconColorControl.style.opacity = '1';
+                ui.iconColorControl.style.pointerEvents = 'auto';
+            } else {
+                ui.iconColorControl.style.opacity = '0.5';
+                ui.iconColorControl.style.pointerEvents = 'none';
+            }
+
+            // Apply SVG Fills
+            const paths = ui.iconGroup.querySelectorAll('path, circle, rect, polygon, ellipse, line, polyline');
+            paths.forEach(p => {
+                if(state.icon.overrideColor) {
+                    p.setAttribute('fill', state.icon.color);
+                    if(p.getAttribute('stroke') && p.getAttribute('stroke') !== 'none') {
+                        p.setAttribute('stroke', state.icon.color);
+                    }
+                } else {
+                    // This is hard to revert for SVGs without reloading. 
+                    // For now, we assume user toggles this mostly for PNGs or simple SVGs.
+                    // For robustness, reloading SVG content on toggle OFF is best, handled in event listener.
+                    if(state.icon.type === 'svg') {
+                         p.setAttribute('fill', state.icon.color); // If we don't reload, we just keep coloring
+                    }
+                }
+            });
+
+            // Apply Image Filters
+            const img = ui.iconGroup.querySelector('image');
+            if (img) {
+                if (state.icon.overrideColor) {
+                    ui.floodColor.setAttribute('flood-color', state.icon.color);
+                    img.setAttribute('filter', 'url(#colorizeFilter)');
+                } else {
+                    img.removeAttribute('filter');
+                }
+            }
+            
+            // Gizmo Visuals Update
+            // The gizmo layer is drawn in the transformed coordinate space? 
+            // NO, to keep handles constant size, it's better if gizmo layer is transformed with the object
+            // OR we update gizmo props.
+            // Let's attach Gizmo Layer TO the transform group? 
+            // No, handles scale with the object which is annoying.
+            // Current setup: Gizmo Layer is separate? No, it's hard to sync.
+            // EASIEST: Put gizmo inside transformGroup, let it scale, but invert scale on handles visually?
+            // Actually, let's keep it simple: Put gizmo INSIDE transformGroup. Handles will get bigger/smaller.
+            // To prevent that, we would need inverse scaling. For this tool, scaling handles is acceptable feedback.
+            if(ui.gizmoLayer.parentNode !== ui.transformGroup) {
+                ui.transformGroup.appendChild(ui.gizmoLayer);
+            }
+            ui.gizmoLayer.setAttribute('display', 'inline'); // Always visible unless exporting
+            
+            // Corner
+            ui.cornerPath.style.display = state.background.cornerFill ? 'block' : 'none';
+            ui.cornerPath.setAttribute('fill', state.background.cornerColor);
+        }
+        
+        // --- Helper for Gizmo Inverse Scale (optional, skipping for simplicity) ---
+
+        // --- Interaction Logic (Gizmos) ---
+        
+        function getSvgPoint(evt) {
+            const point = ui.svg.createSVGPoint();
+            point.x = evt.clientX;
+            point.y = evt.clientY;
+            // Map to SVG coordinates
+            return point.matrixTransform(ui.svg.getScreenCTM().inverse());
+        }
+
+        ui.svg.addEventListener('mousedown', (e) => {
+            const pt = getSvgPoint(e);
+            
+            // Check if clicking handle
+            if(e.target.classList.contains('gizmo-handle')) {
+                state.interaction.isDragging = true;
+                state.interaction.dragType = e.target.dataset.type; // 'scale' or 'rotate'
+                state.interaction.startX = pt.x;
+                state.interaction.startY = pt.y;
+                state.interaction.initialState = {...state.icon};
+                e.stopPropagation();
+                return;
+            }
+            
+            // Check if clicking icon/box (Move)
+            // Simple hit test: distance to center vs scale? 
+            // Or just check if target is inside transformGroup
+            if(ui.transformGroup.contains(e.target) || e.target.id === 'bgRect' || e.target.id === 'canvasContainer') {
+                 // We allow clicking anywhere to drag move if it's broadly "on canvas" but prioritizing the icon
+                 // Actually, dragging anywhere on canvas moving the icon is very user friendly.
+                 state.interaction.isDragging = true;
+                 state.interaction.dragType = 'move';
+                 state.interaction.startX = pt.x;
+                 state.interaction.startY = pt.y;
+                 state.interaction.initialState = {...state.icon};
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!state.interaction.isDragging) return;
+            e.preventDefault();
+            
+            const pt = getSvgPoint(e);
+            const initial = state.interaction.initialState;
+            
+            if (state.interaction.dragType === 'move') {
+                let dx = pt.x - state.interaction.startX;
+                let dy = pt.y - state.interaction.startY;
+                
+                let newX = initial.x + dx;
+                let newY = initial.y + dy;
+                
+                // Snap Logic (Magnet)
+                const snapThresh = 5;
+                let snappedX = false;
+                let snappedY = false;
+                
+                if (Math.abs(newX - 72) < snapThresh) {
+                    newX = 72;
+                    snappedX = true;
+                }
+                if (Math.abs(newY - 72) < snapThresh) {
+                    newY = 72;
+                    snappedY = true;
+                }
+                
+                // Show/Hide Guides
+                ui.snapX.setAttribute('opacity', snappedX ? 0.8 : 0);
+                ui.snapY.setAttribute('opacity', snappedY ? 0.8 : 0);
+
+                state.icon.x = newX;
+                state.icon.y = newY;
+                
+            } else if (state.interaction.dragType === 'scale') {
+                // Distance from center determines scale
+                // We use center (72,72) as origin for simplicity in this calculation because we are transformed
+                // Actually, since we are dragging handles in Transformed Space, this is tricky.
+                // Simple approach: Use delta Y to drive scale
+                const dy = (state.interaction.startY - pt.y) * 0.01;
+                let newScale = Math.max(0.1, initial.scale + dy);
+                state.icon.scale = newScale;
+                // Update slider too
+                ui.iconScale.value = newScale;
+                
+            } else if (state.interaction.dragType === 'rotate') {
+                // Angle between center and mouse
+                // Center in SVG coords is state.icon.x, state.icon.y
+                const cx = state.icon.x;
+                const cy = state.icon.y;
+                
+                const angle = Math.atan2(pt.y - cy, pt.x - cx) * 180 / Math.PI;
+                // Offset because handle is at top (-90 deg)
+                state.icon.rotation = angle + 90; 
+            }
+            
+            render();
+        });
+
+        window.addEventListener('mouseup', () => {
+            state.interaction.isDragging = false;
+            state.interaction.dragType = null;
+            ui.snapX.setAttribute('opacity', 0);
+            ui.snapY.setAttribute('opacity', 0);
+        });
+
+        // --- Standard UI Bindings ---
+        function bind(elem, stateObj, key, renderFn = true) {
+            elem.addEventListener('input', (e) => {
+                let val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+                if(e.target.type === 'range') val = parseFloat(val);
+                stateObj[key] = val;
+                
+                if(key === 'overrideColor' && state.icon.type === 'svg' && !val) {
+                    // Reload original SVG to clear forced fills
+                    loadSvgContent(state.icon.content);
+                }
+                
+                if(renderFn) render();
+            });
+        }
+
+        bind(ui.borderWidth, state.border, 'width');
+        bind(ui.borderRadius, state.border, 'radius');
+        bind(ui.borderStyle, state.border, 'style');
+        bind(ui.borderColor1, state.border, 'color1');
+        bind(ui.borderColor2, state.border, 'color2');
+
+        bind(ui.iconScale, state.icon, 'scale');
+        bind(ui.overrideColorToggle, state.icon, 'overrideColor');
+        bind(ui.iconColor, state.icon, 'color');
+        
+        ui.resetTransformBtn.addEventListener('click', () => {
+            state.icon.x = 72;
+            state.icon.y = 72;
+            state.icon.rotation = 0;
+            render();
+        });
+
+        bind(ui.bgColor, state.background, 'color');
+        bind(ui.cornerFillToggle, state.background, 'cornerFill');
+        bind(ui.cornerColor, state.background, 'cornerColor');
+
+        // --- File Handling ---
+        function handleFile(file) {
+            if(!file) return;
+            const reader = new FileReader();
+            
+            if (file.type.includes('svg')) {
+                reader.onload = (e) => {
+                    state.icon.type = 'svg';
+                    state.icon.content = e.target.result; 
+                    loadSvgContent(e.target.result);
+                };
+                reader.readAsText(file);
+            } else {
+                reader.onload = (e) => {
+                    state.icon.type = 'image';
+                    state.icon.content = e.target.result;
+                    loadImageContent(e.target.result);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function loadSvgContent(svgString) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(svgString, 'image/svg+xml');
+            const svgEl = doc.querySelector('svg');
+            if(svgEl) {
+                // Ensure the SVG fits nicely
+                // We strip width/height to let it scale in our group
+                svgEl.setAttribute('width', '100');
+                svgEl.setAttribute('height', '100');
+                svgEl.setAttribute('x', '-50');
+                svgEl.setAttribute('y', '-50');
+                svgEl.setAttribute('overflow', 'visible'); // Ensure parts don't clip
+                ui.iconGroup.innerHTML = svgEl.outerHTML; // Use outerHTML to keep viewBox
+                render();
+            }
+        }
+
+        function loadImageContent(dataUrl) {
+            ui.iconGroup.innerHTML = `<image href="${dataUrl}" x="-50" y="-50" width="100" height="100" preserveAspectRatio="xMidYMid meet" />`;
+            render();
+        }
+
+        ui.iconUpload.addEventListener('change', (e) => handleFile(e.target.files[0]));
+        ui.dropZone.addEventListener('click', () => ui.iconUpload.click());
+        ui.dropZone.addEventListener('dragover', (e) => { e.preventDefault(); ui.dropZone.classList.add('dragover'); });
+        ui.dropZone.addEventListener('dragleave', () => ui.dropZone.classList.remove('dragover'));
+        ui.dropZone.addEventListener('drop', (e) => {
+            e.preventDefault(); ui.dropZone.classList.remove('dragover'); handleFile(e.dataTransfer.files[0]);
+        });
+        window.toggleAccordion = (id) => {
+            const el = document.getElementById(id);
+            el.classList.toggle('open');
+        };
+
+        // --- Export ---
+        ui.downloadBtn.addEventListener('click', () => {
+            // Hide Gizmos
+            ui.gizmoLayer.setAttribute('display', 'none');
+            
+            const canvas = document.getElementById('exportCanvas');
+            const ctx = canvas.getContext('2d');
+            const svgData = new XMLSerializer().serializeToString(ui.svg);
+            
+            // Restore Gizmos immediately
+            ui.gizmoLayer.setAttribute('display', 'inline');
+
+            const img = new Image();
+            const svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+            const url = URL.createObjectURL(svgBlob);
+
+            img.onload = function() {
+                ctx.clearRect(0, 0, 144, 144);
+                ctx.drawImage(img, 0, 0, 144, 144);
+                const pngUrl = canvas.toDataURL('image/png');
+                const link = document.createElement('a');
+                link.href = pngUrl;
+                link.download = 'streamdeck-icon.png';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            };
+            img.src = url;
+        });
+
+        // Init
+        render();
+
+    </script>
+</body>
+</html>
