@@ -72,6 +72,41 @@
         .cursor-nwse { cursor: nwse-resize; }
         .cursor-nesw { cursor: nesw-resize; }
         .cursor-rotate { cursor: alias; } /* Closest valid generic cursor for rotation */
+
+        /* Icon Result Styling */
+        .icon-result {
+            width: 48px; height: 48px; 
+            padding: 8px; /* Inner padding */
+            background-color: #1e1e1e; 
+            border: 1px solid #333;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .icon-result:hover {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+            transform: scale(1.05);
+        }
+        .icon-result svg {
+            width: 100%; height: 100%;
+            fill: #e0e0e0; /* Default color for search previews */
+        }
+        
+        .loading-icon {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="h-screen flex flex-col md:flex-row overflow-hidden">
@@ -82,7 +117,7 @@
             <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
                 Icon Forge
             </h1>
-            <span class="text-xs text-gray-500">v1.1 Gizmos</span>
+            <span class="text-xs text-gray-500">v1.1 Gizmos & Search</span>
         </div>
 
         <div class="flex-1 overflow-y-auto p-4 space-y-4">
@@ -134,11 +169,25 @@
                 <div id="icon-controls" class="accordion-content open px-3 pb-3">
                     <div class="space-y-4 mt-2">
                         
+                        <!-- ICONIFY SEARCH BAR (New) -->
+                        <div class="relative mb-4">
+                            <input type="text" id="iconSearchInput" placeholder="Search Iconify (e.g., 'home', 'settings')" 
+                                class="w-full p-2 pl-10 bg-[#333] border border-[#444] rounded-lg text-sm focus:border-blue-500 outline-none" autocomplete="off">
+                            <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i>
+                        </div>
+
+                        <!-- Search Results Container (New) -->
+                        <div id="iconSearchResults" class="max-h-48 overflow-y-auto p-2 bg-[#2a2a2a] rounded-lg hidden">
+                            <p id="searchMessage" class="text-sm text-gray-500 text-center py-2">Start typing to see results...</p>
+                            <!-- Icons will be injected here -->
+                            <div id="iconResultsGrid" class="grid grid-cols-5 gap-2 justify-items-center"></div>
+                        </div>
+                        
                         <!-- Upload Area -->
-                        <div id="dropZone" class="drop-zone rounded-lg p-4 text-center cursor-pointer hover:bg-[#2a2a2a]">
+                        <div id="dropZone" class="drop-zone rounded-lg p-4 text-center cursor-pointer hover:bg-[#2a2a2a] mt-4">
                             <input type="file" id="iconUpload" class="hidden" accept="image/svg+xml,image/png,image/jpeg,image/webp">
                             <i class="ph ph-upload-simple text-2xl text-gray-400 mb-1"></i>
-                            <p class="text-xs text-gray-400">Click or Drag SVG/PNG</p>
+                            <p class="text-xs text-gray-400">Click or Drag SVG/PNG to upload</p>
                         </div>
 
                          <div class="flex items-center justify-between">
@@ -298,6 +347,10 @@
     <canvas id="exportCanvas" width="144" height="144" style="display:none;"></canvas>
 
     <script>
+        // --- API Configuration ---
+        const ICONIFY_SEARCH_URL = 'https://api.iconify.design/search?query=';
+        const ICONIFY_SVG_URL = 'https://api.iconify.design/';
+
         // --- State Management ---
         const state = {
             border: {
@@ -312,10 +365,10 @@
                 y: 72,
                 scale: 0.6,
                 rotation: 0,
-                overrideColor: false, // Default false now so PNGs look good out of box
+                overrideColor: false, 
                 color: '#ffffff',
-                type: 'default',
-                content: null
+                type: 'default', // 'default', 'svg', 'image'
+                content: null // Stores the original SVG string or Data URL
             },
             background: {
                 color: '#000000',
@@ -333,7 +386,6 @@
 
         // --- DOM Elements ---
         const ui = {
-            // ... (previous bindings)
             borderWidth: document.getElementById('borderWidth'),
             borderRadius: document.getElementById('borderRadius'),
             borderStyle: document.getElementById('borderStyle'),
@@ -353,6 +405,12 @@
             cornerColor: document.getElementById('cornerColor'),
             
             downloadBtn: document.getElementById('downloadBtn'),
+            
+            // New Search Elements
+            iconSearchInput: document.getElementById('iconSearchInput'),
+            iconSearchResults: document.getElementById('iconSearchResults'),
+            iconResultsGrid: document.getElementById('iconResultsGrid'),
+            searchMessage: document.getElementById('searchMessage'),
             
             // SVG Elements
             svg: document.getElementById('mainSvg'),
@@ -375,7 +433,52 @@
             clipRect: document.querySelector('#cornerRadiusClip rect'),
             floodColor: document.getElementById('floodColor')
         };
+        
+        // --- Utility Functions ---
 
+        /**
+         * Fetches a resource with exponential backoff for resilience.
+         * @param {string} url - The URL to fetch.
+         * @param {object} [options={}] - Fetch options.
+         * @param {number} [maxRetries=5] - Maximum number of retries.
+         */
+        async function fetchWithBackoff(url, options = {}, maxRetries = 5) {
+            let delay = 1000;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        if (response.status >= 400 && response.status < 500) {
+                            throw new Error(`Client Error: ${response.status} ${response.statusText}`);
+                        }
+                        throw new Error(`Server Error: ${response.status} ${response.statusText}`);
+                    }
+                    return response;
+                } catch (error) {
+                    if (i === maxRetries - 1) {
+                        console.error("Max retries reached. Failed to fetch:", url, error);
+                        throw error;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+        }
+        
+        /**
+         * Simple debouncing function.
+         * @param {function} func - Function to debounce.
+         * @param {number} delay - Delay in ms.
+         */
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), delay);
+            };
+        }
+        
         // --- Core Render Logic ---
         function render() {
             // Background
@@ -407,7 +510,6 @@
                 `translate(${state.icon.x}, ${state.icon.y}) rotate(${state.icon.rotation}) scale(${state.icon.scale})`);
 
             // Icon Color & Filter Logic
-            // Update UI State
             if(state.icon.overrideColor) {
                 ui.iconColorControl.style.opacity = '1';
                 ui.iconColorControl.style.pointerEvents = 'auto';
@@ -416,25 +518,34 @@
                 ui.iconColorControl.style.pointerEvents = 'none';
             }
 
-            // Apply SVG Fills
+            // Apply SVG Fills / Reset Fills for SVGs if overrideColor is enabled/disabled
             const paths = ui.iconGroup.querySelectorAll('path, circle, rect, polygon, ellipse, line, polyline');
-            paths.forEach(p => {
-                if(state.icon.overrideColor) {
-                    p.setAttribute('fill', state.icon.color);
-                    if(p.getAttribute('stroke') && p.getAttribute('stroke') !== 'none') {
-                        p.setAttribute('stroke', state.icon.color);
-                    }
-                } else {
-                    // This is hard to revert for SVGs without reloading. 
-                    // For now, we assume user toggles this mostly for PNGs or simple SVGs.
-                    // For robustness, reloading SVG content on toggle OFF is best, handled in event listener.
-                    if(state.icon.type === 'svg') {
-                         p.setAttribute('fill', state.icon.color); // If we don't reload, we just keep coloring
+            if (state.icon.type === 'svg') {
+                if (state.icon.overrideColor) {
+                    paths.forEach(p => {
+                        p.setAttribute('fill', state.icon.color);
+                        if(p.getAttribute('stroke') && p.getAttribute('stroke') !== 'none') {
+                             p.setAttribute('stroke', state.icon.color);
+                        }
+                    });
+                } else if (state.icon.content) {
+                    // Re-render original SVG to clear forced colors
+                    const svgString = state.icon.content;
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(svgString, 'image/svg+xml');
+                    const svgEl = doc.querySelector('svg');
+                    if(svgEl) {
+                        svgEl.setAttribute('width', '100');
+                        svgEl.setAttribute('height', '100');
+                        svgEl.setAttribute('x', '-50');
+                        svgEl.setAttribute('y', '-50');
+                        ui.iconGroup.innerHTML = svgEl.outerHTML;
                     }
                 }
-            });
+            }
 
-            // Apply Image Filters
+
+            // Apply Image Filters (PNG/Raster)
             const img = ui.iconGroup.querySelector('image');
             if (img) {
                 if (state.icon.overrideColor) {
@@ -446,41 +557,34 @@
             }
             
             // Gizmo Visuals Update
-            // The gizmo layer is drawn in the transformed coordinate space? 
-            // NO, to keep handles constant size, it's better if gizmo layer is transformed with the object
-            // OR we update gizmo props.
-            // Let's attach Gizmo Layer TO the transform group? 
-            // No, handles scale with the object which is annoying.
-            // Current setup: Gizmo Layer is separate? No, it's hard to sync.
-            // EASIEST: Put gizmo inside transformGroup, let it scale, but invert scale on handles visually?
-            // Actually, let's keep it simple: Put gizmo INSIDE transformGroup. Handles will get bigger/smaller.
-            // To prevent that, we would need inverse scaling. For this tool, scaling handles is acceptable feedback.
             if(ui.gizmoLayer.parentNode !== ui.transformGroup) {
                 ui.transformGroup.appendChild(ui.gizmoLayer);
             }
-            ui.gizmoLayer.setAttribute('display', 'inline'); // Always visible unless exporting
+            ui.gizmoLayer.setAttribute('display', 'inline'); 
             
             // Corner
             ui.cornerPath.style.display = state.background.cornerFill ? 'block' : 'none';
             ui.cornerPath.setAttribute('fill', state.background.cornerColor);
         }
         
-        // --- Helper for Gizmo Inverse Scale (optional, skipping for simplicity) ---
-
         // --- Interaction Logic (Gizmos) ---
         
         function getSvgPoint(evt) {
-            const point = ui.svg.createSVGPoint();
-            point.x = evt.clientX;
-            point.y = evt.clientY;
-            // Map to SVG coordinates
-            return point.matrixTransform(ui.svg.getScreenCTM().inverse());
+            const rect = ui.svg.getBoundingClientRect();
+            const pt = ui.svg.createSVGPoint();
+            pt.x = evt.clientX - rect.left;
+            pt.y = evt.clientY - rect.top;
+            
+            // Scale point from display size (288/400px) to viewBox (144px)
+            const scale = 144 / rect.width;
+            pt.x *= scale;
+            pt.y *= scale;
+            return pt;
         }
 
         ui.svg.addEventListener('mousedown', (e) => {
             const pt = getSvgPoint(e);
             
-            // Check if clicking handle
             if(e.target.classList.contains('gizmo-handle')) {
                 state.interaction.isDragging = true;
                 state.interaction.dragType = e.target.dataset.type; // 'scale' or 'rotate'
@@ -491,12 +595,7 @@
                 return;
             }
             
-            // Check if clicking icon/box (Move)
-            // Simple hit test: distance to center vs scale? 
-            // Or just check if target is inside transformGroup
             if(ui.transformGroup.contains(e.target) || e.target.id === 'bgRect' || e.target.id === 'canvasContainer') {
-                 // We allow clicking anywhere to drag move if it's broadly "on canvas" but prioritizing the icon
-                 // Actually, dragging anywhere on canvas moving the icon is very user friendly.
                  state.interaction.isDragging = true;
                  state.interaction.dragType = 'move';
                  state.interaction.startX = pt.x;
@@ -533,7 +632,6 @@
                     snappedY = true;
                 }
                 
-                // Show/Hide Guides
                 ui.snapX.setAttribute('opacity', snappedX ? 0.8 : 0);
                 ui.snapY.setAttribute('opacity', snappedY ? 0.8 : 0);
 
@@ -541,24 +639,16 @@
                 state.icon.y = newY;
                 
             } else if (state.interaction.dragType === 'scale') {
-                // Distance from center determines scale
-                // We use center (72,72) as origin for simplicity in this calculation because we are transformed
-                // Actually, since we are dragging handles in Transformed Space, this is tricky.
-                // Simple approach: Use delta Y to drive scale
                 const dy = (state.interaction.startY - pt.y) * 0.01;
                 let newScale = Math.max(0.1, initial.scale + dy);
                 state.icon.scale = newScale;
-                // Update slider too
                 ui.iconScale.value = newScale;
                 
             } else if (state.interaction.dragType === 'rotate') {
-                // Angle between center and mouse
-                // Center in SVG coords is state.icon.x, state.icon.y
                 const cx = state.icon.x;
                 const cy = state.icon.y;
                 
                 const angle = Math.atan2(pt.y - cy, pt.x - cx) * 180 / Math.PI;
-                // Offset because handle is at top (-90 deg)
                 state.icon.rotation = angle + 90; 
             }
             
@@ -572,7 +662,96 @@
             ui.snapY.setAttribute('opacity', 0);
         });
 
-        // --- Standard UI Bindings ---
+        // --- Icon Search Logic ---
+        
+        async function loadIconifyIcon(iconName) {
+            try {
+                const url = `${ICONIFY_SVG_URL}${iconName}.svg`;
+                const response = await fetchWithBackoff(url);
+                const svgString = await response.text();
+                
+                state.icon.type = 'svg';
+                state.icon.content = svgString;
+                loadSvgContent(svgString);
+                
+                // Reset search view
+                ui.iconSearchResults.classList.add('hidden');
+                ui.iconSearchInput.value = '';
+                
+            } catch (error) {
+                console.error("Failed to load icon:", error);
+                ui.searchMessage.textContent = "Error loading icon. Check console.";
+            }
+        }
+        
+        function displaySearchResults(icons) {
+            ui.iconResultsGrid.innerHTML = '';
+            ui.iconSearchResults.classList.remove('hidden');
+
+            if (icons.length === 0) {
+                ui.searchMessage.textContent = "No icons found for your query.";
+                ui.searchMessage.classList.remove('hidden');
+                return;
+            }
+
+            ui.searchMessage.classList.add('hidden');
+
+            icons.forEach(icon => {
+                const iconName = icon.icon;
+                
+                // Create a div wrapper for the icon and add class for styling
+                const wrapper = document.createElement('div');
+                wrapper.className = 'icon-result';
+                wrapper.title = iconName;
+                wrapper.dataset.iconName = iconName;
+
+                // Create an image element to load the SVG preview
+                const svgPreviewUrl = `${ICONIFY_SVG_URL}${iconName}.svg?width=32&height=32`;
+                const img = document.createElement('img');
+                img.src = svgPreviewUrl;
+                img.alt = iconName;
+                img.width = 32;
+                img.height = 32;
+                
+                wrapper.appendChild(img);
+                
+                // Add click handler to the wrapper
+                wrapper.addEventListener('click', () => loadIconifyIcon(iconName));
+                
+                ui.iconResultsGrid.appendChild(wrapper);
+            });
+        }
+        
+        const performSearch = debounce(async (query) => {
+            if (query.length < 2) {
+                ui.iconResultsGrid.innerHTML = '';
+                ui.searchMessage.textContent = "Start typing to see results...";
+                ui.searchMessage.classList.remove('hidden');
+                ui.iconSearchResults.classList.add('hidden');
+                return;
+            }
+
+            ui.iconResultsGrid.innerHTML = `<div class="col-span-5 flex justify-center py-2"><div class="loading-icon"></div></div>`;
+            ui.iconSearchResults.classList.remove('hidden');
+            ui.searchMessage.classList.add('hidden');
+
+            try {
+                const url = `${ICONIFY_SEARCH_URL}${encodeURIComponent(query)}&limit=20`;
+                const response = await fetchWithBackoff(url);
+                const data = await response.json();
+                
+                displaySearchResults(data.icons || []);
+            } catch (error) {
+                console.error("Iconify Search Failed:", error);
+                ui.iconResultsGrid.innerHTML = '';
+                ui.searchMessage.textContent = "Search failed. Try a simpler query.";
+                ui.searchMessage.classList.remove('hidden');
+            }
+        }, 300);
+
+        ui.iconSearchInput.addEventListener('input', (e) => performSearch(e.target.value.trim()));
+
+        // --- Standard UI Bindings & File Handling ---
         function bind(elem, stateObj, key, renderFn = true) {
             elem.addEventListener('input', (e) => {
                 let val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
@@ -580,8 +759,11 @@
                 stateObj[key] = val;
                 
                 if(key === 'overrideColor' && state.icon.type === 'svg' && !val) {
-                    // Reload original SVG to clear forced fills
-                    loadSvgContent(state.icon.content);
+                    // This re-renders with original SVG colors
+                    loadSvgContent(state.icon.content); 
+                } else if (key === 'overrideColor' && state.icon.type === 'svg' && val) {
+                    // Force a render to apply color tint
+                    render();
                 }
                 
                 if(renderFn) render();
@@ -609,7 +791,6 @@
         bind(ui.cornerFillToggle, state.background, 'cornerFill');
         bind(ui.cornerColor, state.background, 'cornerColor');
 
-        // --- File Handling ---
         function handleFile(file) {
             if(!file) return;
             const reader = new FileReader();
@@ -629,6 +810,9 @@
                 };
                 reader.readAsDataURL(file);
             }
+            // Clear search when file is uploaded
+            ui.iconSearchResults.classList.add('hidden');
+            ui.iconSearchInput.value = '';
         }
 
         function loadSvgContent(svgString) {
@@ -637,14 +821,15 @@
             const svgEl = doc.querySelector('svg');
             if(svgEl) {
                 // Ensure the SVG fits nicely
-                // We strip width/height to let it scale in our group
                 svgEl.setAttribute('width', '100');
                 svgEl.setAttribute('height', '100');
                 svgEl.setAttribute('x', '-50');
                 svgEl.setAttribute('y', '-50');
-                svgEl.setAttribute('overflow', 'visible'); // Ensure parts don't clip
-                ui.iconGroup.innerHTML = svgEl.outerHTML; // Use outerHTML to keep viewBox
-                render();
+                svgEl.setAttribute('overflow', 'visible'); 
+                ui.iconGroup.innerHTML = svgEl.outerHTML; 
+                render(); // Render handles color tinting if override is on
+            } else {
+                console.error("Failed to parse SVG content.");
             }
         }
 
@@ -667,14 +852,40 @@
 
         // --- Export ---
         ui.downloadBtn.addEventListener('click', () => {
-            // Hide Gizmos
             ui.gizmoLayer.setAttribute('display', 'none');
             
             const canvas = document.getElementById('exportCanvas');
             const ctx = canvas.getContext('2d');
-            const svgData = new XMLSerializer().serializeToString(ui.svg);
             
-            // Restore Gizmos immediately
+            // Re-render SVG without gizmos, and with current styling applied
+            const paths = ui.iconGroup.querySelectorAll('path, circle, rect, polygon, ellipse, line, polyline');
+            if (state.icon.type === 'svg' && state.icon.overrideColor) {
+                 // Force colors onto SVG elements for export if override is active
+                 paths.forEach(p => {
+                    p.setAttribute('fill', state.icon.color);
+                    if(p.getAttribute('stroke') && p.getAttribute('stroke') !== 'none') {
+                         p.setAttribute('stroke', state.icon.color);
+                    }
+                });
+            }
+            // Temporarily update border to solid color if RGB animation is on, so export is consistent
+            const originalStroke = ui.borderRect.getAttribute('stroke');
+            const originalClass = ui.borderRect.className;
+            let tempColor = null;
+
+            if (state.border.style === 'rgb' || state.border.style === 'gradient') {
+                tempColor = state.border.color1; // Use color 1 as a solid representation
+                ui.borderRect.setAttribute('stroke', tempColor);
+                ui.borderRect.classList.remove('animate-rgb');
+            }
+
+            const svgData = new XMLSerializer().serializeToString(ui.svg);
+
+            // Restore live view state
+            if (tempColor) {
+                ui.borderRect.setAttribute('stroke', originalStroke);
+                ui.borderRect.className = originalClass; // Restores animate-rgb if it was there
+            }
             ui.gizmoLayer.setAttribute('display', 'inline');
 
             const img = new Image();
@@ -692,6 +903,9 @@
                 link.click();
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
+
+                // A quick final render to ensure the visual state is correct after temporary export changes
+                render(); 
             };
             img.src = url;
         });
